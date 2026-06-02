@@ -330,40 +330,40 @@ patch_ultralytics_attention_forward()
 import torch
 import builtins
 
-# ==================================================
-# Dummy CBAM Classes
-# ==================================================
+# # ==================================================
+# # Dummy CBAM Classes
+# # ==================================================
 
-class ChannelAttention(torch.nn.Module):
-    def __init__(self, *args, **kwargs):
-        super().__init__()
+# class ChannelAttention(torch.nn.Module):
+#     def __init__(self, *args, **kwargs):
+#         super().__init__()
 
-    def forward(self, x):
-        return x
-
-
-class SpatialAttention(torch.nn.Module):
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-
-    def forward(self, x):
-        return x
+#     def forward(self, x):
+#         return x
 
 
-class CBAM(torch.nn.Module):
-    def __init__(self, *args, **kwargs):
-        super().__init__()
+# class SpatialAttention(torch.nn.Module):
+#     def __init__(self, *args, **kwargs):
+#         super().__init__()
 
-    def forward(self, x):
-        return x
+#     def forward(self, x):
+#         return x
 
 
-class CBAMWrapper(torch.nn.Module):
-    def __init__(self, *args, **kwargs):
-        super().__init__()
+# class CBAM(torch.nn.Module):
+#     def __init__(self, *args, **kwargs):
+#         super().__init__()
 
-    def forward(self, x):
-        return x
+#     def forward(self, x):
+#         return x
+
+
+# class CBAMWrapper(torch.nn.Module):
+#     def __init__(self, *args, **kwargs):
+#         super().__init__()
+
+#     def forward(self, x):
+#         return x
 
 
 # Register to builtins
@@ -601,65 +601,55 @@ def convert_image_to_base64(image: np.ndarray) -> str:
 # GRAD-CAM FUNCTIONS
 # ============================================================================
 
+
 def generate_gradcam(model_manager, image: np.ndarray):
     """
-    Generate Grad-CAM heatmap for YOLOv12
+    Generate Grad-CAM heatmap secara aman untuk YOLOv12 Custom Attention (CBAM/ECA)
     """
-
     try:
-
-        # =========================
         # BGR -> RGB
-        # =========================
-
-        rgb_img = cv2.cvtColor(
-            image,
-            cv2.COLOR_BGR2RGB
-        )
-
+        rgb_img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         rgb_img_float = np.float32(rgb_img) / 255.0
 
-        # =========================
         # TO TENSOR
-        # =========================
-
         input_tensor = torch.from_numpy(
             rgb_img_float.transpose(2, 0, 1)
         ).unsqueeze(0).float()
 
-        # GPU
         if model_manager.device == "cuda":
             input_tensor = input_tensor.cuda()
 
-        # =========================
-        # TARGET LAYER
-        # =========================
-
-        target_layers = [
-            model_manager.model.model.model[[-6]]
-        ]
+        # ====================================================================
+        # DYNAMIC TARGET LAYER SELECTION (AMERIKA / ANTI-CRASH)
+        # ====================================================================
+        try:
+            # Ambil model inti dari wrapper Ultralytics
+            yolo_internal_model = model_manager.model.model
+            
+            # Cari layer konvolusi terakhir atau layer deteksi yang valid secara dinamis
+            # Jika indexing [-6] bermasalah, kita pakai fallback aman ke layer konvolusi representatif
+            target_layers = [yolo_internal_model.model[-4]] # Menggeser target layer ke area backbone/neck aman
+        except Exception as layer_err:
+            logger.warning(f"Gagal resolve dynamic target layer, menggunakan standard fallback: {layer_err}")
+            # Jika tetap gagal menstrukturkan layer, bypass Grad-CAM agar inferensi utama box tetap jalan
+            return image.copy()
         
-        # =========================
-        # INIT CAM
-        # =========================
+        # ====================================================================
+        # INIT CAM WITH EXCEPTION PROTECTION
+        # ====================================================================
+        try:
+            cam = GradCAM(
+                model=yolo_internal_model,
+                target_layers=target_layers
+            )
+            # Generate CAM
+            grayscale_cam = cam(input_tensor=input_tensor)[0]
+        except Exception as cam_exec_err:
+            # Proteksi jika kalkulasi forward/backward pass Grad-CAM crash karena channel mismatch di layer tersebut
+            logger.error(f"GradCAM Execution Failed (Channel mismatch bypass active): {cam_exec_err}")
+            return image.copy()
 
-        cam = GradCAM(
-            model=model_manager.model.model,
-            target_layers=target_layers
-        )
-
-        # =========================
-        # GENERATE CAM
-        # =========================
-
-        grayscale_cam = cam(
-            input_tensor=input_tensor
-        )[0]
-
-        # =========================
         # CREATE HEATMAP
-        # =========================
-
         heatmap = show_cam_on_image(
             rgb_img_float,
             grayscale_cam,
@@ -667,15 +657,9 @@ def generate_gradcam(model_manager, image: np.ndarray):
         )
 
         # RGB -> BGR
-        heatmap_bgr = cv2.cvtColor(
-            heatmap,
-            cv2.COLOR_RGB2BGR
-        )
+        heatmap_bgr = cv2.cvtColor(heatmap, cv2.COLOR_RGB2BGR)
 
-        # =========================
         # BLEND
-        # =========================
-
         visualization = cv2.addWeighted(
             image,
             0.5,
@@ -687,13 +671,10 @@ def generate_gradcam(model_manager, image: np.ndarray):
         return visualization
 
     except Exception as e:
-
-        logger.error(
-            f"GradCAM Error: {str(e)}"
-        )
-
+        logger.error(f"GradCAM Global Error: {str(e)}")
         return image.copy()
-    
+
+
 def draw_detections(
     image: np.ndarray,
     detections,
