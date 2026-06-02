@@ -1324,7 +1324,7 @@ async def detect_disease(
         stats = calculate_detection_statistics(results, image.shape)
         
         # Draw annotations
-        aannotated_image = draw_detections(
+        annotated_image = draw_detections(
     image=image,
     detections=results,
     class_names=cbam_model_manager.class_names,
