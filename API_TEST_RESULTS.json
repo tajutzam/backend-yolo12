@@ -1,0 +1,83 @@
+{
+  "timestamp": "2026-04-19T17:28:12.697564",
+  "tests": {
+    "Health Check": {
+      "status": "PASS",
+      "response": {
+        "status": "healthy",
+        "model_loaded": true,
+        "device": "cpu",
+        "model_info": {
+          "model_path": "runs/detect/train4/weights/best_clean.pt",
+          "num_classes": 5,
+          "classes": {
+            "0": "Conjunctivitis",
+            "1": "Eyelid",
+            "2": "Normal",
+            "3": "Uveitis",
+            "4": "cataract"
+          }
+        },
+        "timestamp": "2026-04-19T17:28:12.706079"
+      },
+      "error": null
+    },
+    "Model Info": {
+      "status": "PASS",
+      "response": {
+        "model_name": "YOLOv12 with Attention Mechanism",
+        "num_classes": 5,
+        "classes": {
+          "0": "Conjunctivitis",
+          "1": "Eyelid",
+          "2": "Normal",
+          "3": "Uveitis",
+          "4": "cataract"
+        }
+      },
+      "error": null
+    },
+    "Supported Formats": {
+      "status": "PASS",
+      "response": {
+        "formats": [
+          ".jpeg",
+          ".png",
+          ".bmp",
+          ".jpg",
+          ".tiff",
+          ".webp"
+        ],
+        "max_file_size_mb": 50,
+        "max_batch_size": 50
+      },
+      "error": null
+    },
+    "Error Handling - Missing File": {
+      "status": "PASS",
+      "response": "Correctly returns 422",
+      "error": null
+    },
+    "Error Handling - Invalid Format": {
+      "status": "PASS",
+      "response": "HTTP 400",
+      "error": null
+    },
+    "CORS Headers": {
+      "status": "SKIP",
+      "response": null,
+      "error": "CORS headers not found"
+    },
+    "Single Image Detection": {
+      "status": "FAIL",
+      "response": null,
+      "error": "HTTP 500"
+    }
+  },
+  "summary": {
+    "total": 7,
+    "passed": 5,
+    "failed": 1,
+    "skipped": 1
+  }
+}

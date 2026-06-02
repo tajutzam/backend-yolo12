@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: yolo_api_container
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - YOLO_MODEL_PATH=/app/runs/detect/train4/weights/best_clean.pt
+      - PYTHONPATH=/app
