@@ -326,7 +326,7 @@ def patch_ultralytics_attention_forward() -> None:
     yolo_block.AAttn._legacy_qk_compat = True
 
 
-# patch_ultralytics_attention_forward()
+patch_ultralytics_attention_forward()
 import torch
 import builtins
 
