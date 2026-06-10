@@ -402,6 +402,8 @@ DEFAULT_CONF_THRESHOLD = 0.25
 DEFAULT_IOU_THRESHOLD = 0.45
 MAX_DETECTIONS = 100
 
+ENABLE_EYE_VALIDATION = os.getenv("ENABLE_EYE_VALIDATION", "true").lower() != "false"
+
 # ============================================================================
 # PYDANTIC MODELS
 # ============================================================================
@@ -587,6 +589,50 @@ def load_image_from_bytes(image_bytes: bytes) -> Optional[np.ndarray]:
     except Exception as e:
         logger.error(f"Error loading image: {str(e)}")
         return None
+
+def _load_cascade(filename: str) -> Optional["cv2.CascadeClassifier"]:
+    try:
+        path = os.path.join(cv2.data.haarcascades, filename)
+        cascade = cv2.CascadeClassifier(path)
+        if cascade.empty():
+            logger.warning(f"Cascade kosong / gagal dimuat: {filename}")
+            return None
+        return cascade
+    except Exception as e:
+        logger.warning(f"Gagal memuat cascade {filename}: {e}")
+        return None
+
+
+_EYE_CASCADE = _load_cascade("haarcascade_eye.xml")
+_EYE_GLASSES_CASCADE = _load_cascade("haarcascade_eye_tree_eyeglasses.xml")
+_FACE_CASCADE = _load_cascade("haarcascade_frontalface_default.xml")
+
+
+def is_eye_image(image: np.ndarray) -> bool:
+    cascades = [c for c in (_EYE_CASCADE, _EYE_GLASSES_CASCADE, _FACE_CASCADE) if c is not None]
+    if not cascades:
+        logger.warning("Tidak ada Haar cascade tersedia, melewati validasi mata")
+        return True
+
+    try:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        gray = cv2.equalizeHist(gray)
+    except Exception as e:
+        logger.warning(f"Gagal preprocessing untuk validasi mata: {e}")
+        return True
+
+    for cascade in cascades:
+        detections = cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(30, 30),
+        )
+        if len(detections) > 0:
+            return True
+
+    return False
+
 
 def convert_image_to_base64(image: np.ndarray) -> str:
     """Convert numpy array image to base64 string"""
@@ -1282,14 +1328,20 @@ async def detect_disease(
         image = load_image_from_bytes(contents)
         if image is None:
             raise HTTPException(status_code=400, detail="Gagal membaca image")
-        
+
+        if ENABLE_EYE_VALIDATION and not is_eye_image(image):
+            raise HTTPException(
+                status_code=422,
+                detail="Gambar tidak terdeteksi sebagai citra mata. Unggah foto mata yang valid."
+            )
+
         # Save temporarily - use proper temp directory for cross-platform compatibility
         import tempfile
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
             temp_path = tmp_file.name
-        
+
         cv2.imwrite(temp_path, image)
-        
+
         # Run inference
         results = cbam_model_manager.predict(temp_path, conf=conf, iou=iou)
         
@@ -1397,12 +1449,20 @@ async def detect_batch(
                     "error": "Gagal membaca image"
                 })
                 continue
-            
+
+            if ENABLE_EYE_VALIDATION and not is_eye_image(image):
+                results.append({
+                    "filename": file.filename,
+                    "success": False,
+                    "error": "Gambar tidak terdeteksi sebagai citra mata"
+                })
+                continue
+
             import tempfile
             with tempfile.NamedTemporaryFile(suffix=Path(file.filename).suffix or ".png", delete=False) as tmp_file:
                 temp_path = tmp_file.name
             cv2.imwrite(temp_path, image)
-            
+
             result = cbam_model_manager.predict(temp_path, conf=conf, iou=iou)
             detection_records = extract_detection_records(result, cbam_model_manager.class_names, image.shape)
             evaluation = evaluate_detection_records(
@@ -1489,14 +1549,20 @@ async def detect_disease_eca(
         image = load_image_from_bytes(contents)
         if image is None:
             raise HTTPException(status_code=400, detail="Gagal membaca image")
-        
+
+        if ENABLE_EYE_VALIDATION and not is_eye_image(image):
+            raise HTTPException(
+                status_code=422,
+                detail="Gambar tidak terdeteksi sebagai citra mata. Unggah foto mata yang valid."
+            )
+
         # Save temporarily - use proper temp directory for cross-platform compatibility
         import tempfile
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
             temp_path = tmp_file.name
-        
+
         cv2.imwrite(temp_path, image)
-        
+
         # Run inference dengan ECA model
         results = eca_model_manager.predict(temp_path, conf=conf, iou=iou)
         
@@ -1512,7 +1578,7 @@ async def detect_disease_eca(
         stats = calculate_detection_statistics(results, image.shape)
         
         # Draw annotations
-        annotated_image = draw_detections(image, results, eca_model_manager.class_names)
+        annotated_image = draw_detections(image, results, eca_model_manager.class_names, eca_model_manager)
         
         # Encode image if requested
         image_base64 = None
@@ -1602,12 +1668,20 @@ async def detect_batch_eca(
                     "error": "Gagal membaca image"
                 })
                 continue
-            
+
+            if ENABLE_EYE_VALIDATION and not is_eye_image(image):
+                results.append({
+                    "filename": file.filename,
+                    "success": False,
+                    "error": "Gambar tidak terdeteksi sebagai citra mata"
+                })
+                continue
+
             import tempfile
             with tempfile.NamedTemporaryFile(suffix=Path(file.filename).suffix or ".png", delete=False) as tmp_file:
                 temp_path = tmp_file.name
             cv2.imwrite(temp_path, image)
-            
+
             result = eca_model_manager.predict(temp_path, conf=conf, iou=iou)
             detection_records = extract_detection_records(result, eca_model_manager.class_names, image.shape)
             evaluation = evaluate_detection_records(
